@@ -1,60 +1,60 @@
-# 🛰️ IntegraCar — Pipeline de Extração de Imagens
+# 🛰️ IntegraCar — Image Extraction Pipeline
 
-Pipeline automatizado que baixa imagens de satélite e mapas de uso do solo do **GeoBases do Espírito Santo** para propriedades rurais cadastradas no CAR (Cadastro Ambiental Rural).
+Automated pipeline that downloads satellite images and land use maps from **GeoBases do Espírito Santo** for rural properties registered in the CAR (Rural Environmental Registry - Cadastro Ambiental Rural).
 
-Para cada coordenada listada em um arquivo CSV, o pipeline produz dois arquivos GeoTIFF georreferenciados:
+For each coordinate listed in a CSV file, the pipeline produces two georeferenced GeoTIFF files:
 
-- **SATELITE** — ortofotomosaico bruto (KOMPSAT 2019-2020)
-- **SEGMENTADO** — mapa de uso e cobertura do solo (IJSN 2019)
-
----
-
-## Pré-requisitos
-
-- **Python 3.8+** instalado (recomenda-se adicionar ao PATH).
-- Arquivo CSV com as coordenadas (veja o formato esperado no final da página).
+- **SATELLITE** — raw orthophotomosaic (KOMPSAT 2019-2020)
+- **SEGMENTED** — land use and land cover map (IJSN 2019)
 
 ---
 
-## Instalação e Execução
+## Prerequisites
 
-### Passo 1: Clonar o repositório
-Abra o terminal (Prompt de Comando, PowerShell ou Terminal do Linux/Mac) e clone o projeto:
+- **Python 3.8+** installed (adding it to PATH is recommended).
+- CSV file with the coordinates (see the expected format at the bottom of the page).
+
+---
+
+## Installation and Execution
+
+### Step 1: Clone the repository
+Open your terminal (Command Prompt, PowerShell, or Linux/Mac Terminal) and clone the project:
 ```bash
 git clone https://github.com/integraCAR/car-imagens-downloader.git
 cd car-imagens-downloader
 ```
 
-### Passo 2: Criar ambiente virtual (Recomendado)
-Para não dar conflito com outras bibliotecas do seu computador, crie e ative um ambiente virtual:
+### Step 2: Create a virtual environment (Recommended)
+To prevent conflicts with other libraries on your computer, create and activate a virtual environment:
 
-**No Windows:**
+**On Windows:**
 ```bash
 python -m venv venv
 venv\Scripts\activate
 ```
 
-**No Linux/Mac:**
+**On Linux/Mac:**
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-### Passo 3: Instalar as dependências
-Com o ambiente ativado (você verá um `(venv)` no terminal), instale as bibliotecas necessárias:
+### Step 3: Install dependencies
+With the environment activated (you will see a `(venv)` in the terminal), install the required libraries:
 ```bash
 pip install -r requirements.txt
 ```
 
-### Passo 4: Executar o extrator
-Execute o script `extrator.py` informando o seu arquivo CSV e a pasta onde deseja salvar as imagens.
+### Step 4: Run the extractor
+Execute the `extrator.py` script by providing your CSV file and the destination folder for the images.
 
-**Exemplo básico:**
+**Basic example:**
 ```bash
 python extrator.py --csv coordenadas_treino_amostra.csv --caminho ./saida
 ```
 
-**Exemplo completo (customizando parâmetros):**
+**Complete example (customizing parameters):**
 ```bash
 python extrator.py \
   --csv coordenadas_treino_amostra.csv \
@@ -64,30 +64,30 @@ python extrator.py \
   --altura 1024 \
   --qtd 1000
 ```
-*(Dica: no Windows PowerShell, caso dê erro ao pular linha com `\`, escreva o comando inteiro na mesma linha).*
+*(Tip: on Windows PowerShell, if you get an error when breaking lines with `\`, write the entire command on a single line).*
 
-**Para consultar a ajuda:**
+**To view help:**
 ```bash
 python extrator.py --help
 ```
 
 ---
 
-## Parâmetros
+## Parameters
 
-| Parâmetro | Obrigatório | Descrição | Padrão |
+| Parameter | Required | Description | Default |
 |---|---|---|---|
-| `--csv ARQUIVO` | ✅ | CSV com colunas `cod_imovel`, `x`, `y` (separadas por `;`) | — |
-| `--caminho PASTA` | ✅ | Pasta de destino onde serão criadas as subpastas | — |
-| `--buffer METROS` | — | Metade do lado do recorte geográfico em metros | `1024` |
-| `--largura PIXELS` | — | Largura da imagem de saída em pixels | `1024` |
-| `--altura PIXELS` | — | Altura da imagem de saída em pixels | `1024` |
-| `--qtd N` | — | Limita às primeiras N linhas do CSV | todas |
-| `--workers N` | — | Downloads simultâneos em paralelo | `4` |
+| `--csv FILE` | ✅ | CSV with columns `cod_imovel`, `x`, `y` (separated by `;`) | — |
+| `--caminho FOLDER` | ✅ | Destination folder where subfolders will be created | — |
+| `--buffer METERS` | — | Half the side length of the geographic crop in meters | `1024` |
+| `--largura PIXELS` | — | Output image width in pixels | `1024` |
+| `--altura PIXELS` | — | Output image height in pixels | `1024` |
+| `--qtd N` | — | Limits to the first N rows of the CSV | all |
+| `--workers N` | — | Simultaneous parallel downloads | `4` |
 
 ---
 
-## Estrutura de Saída
+## Output Structure
 
 ```
 <--caminho>/
@@ -101,41 +101,41 @@ python extrator.py --help
     └── ...
 
 artifacts/
-└── dataset_manifesto.csv   ← registro de status de cada download
+└── dataset_manifesto.csv   ← status record of each download
 
 logs/
-└── execucao.log            ← log completo da execução
+└── execucao.log            ← complete execution log
 ```
 
 ---
 
-## Como o Pipeline Funciona — Passo a Passo
+## How the Pipeline Works — Step by Step
 
-O pipeline é composto por **6 etapas sequenciais**, executadas pelo `extrator.py`. As etapas internas de cada download são realizadas de forma paralela e assíncrona.
+The pipeline consists of **6 sequential steps**, executed by `extrator.py`. The internal steps of each download are performed in a parallel and asynchronous manner.
 
 ---
 
-### Etapa 1 — Leitura do CSV de coordenadas
+### Step 1 — Reading the coordinates CSV
 
-> **Arquivo:** `extrator.py` → função `executar_pipeline_async`
-> **Biblioteca:** `pandas`
+> **File:** `extrator.py` → `executar_pipeline_async` function
+> **Library:** `pandas`
 
-O pipeline começa lendo o arquivo CSV informado via `--csv`. Esse arquivo contém uma linha por propriedade rural, com o código do imóvel e suas coordenadas geográficas em UTM.
+The pipeline begins by reading the CSV file provided via `--csv`. This file contains one row per rural property, with the property code and its geographic coordinates in UTM.
 
 ```python
 dataframe = pd.read_csv(cfg["arquivo_csv"], sep=";")
 ```
 
-A biblioteca **pandas** (`pd.read_csv`) lê o arquivo e transforma cada linha em uma linha de um `DataFrame` — uma estrutura de tabela em memória que permite filtrar, iterar e manipular os dados com eficiência. Se o usuário passou `--qtd 1000`, o `DataFrame` é imediatamente truncado para as 1000 primeiras linhas com `.head(1000)`, antes de qualquer download começar.
+The **pandas** library (`pd.read_csv`) reads the file and transforms each row into a `DataFrame` row — an in-memory table structure that allows for efficient data filtering, iteration, and manipulation. If the user passed `--qtd 1000`, the `DataFrame` is immediately truncated to the first 1000 rows with `.head(1000)` before any download starts.
 
 ---
 
-### Etapa 2 — Conversão de coordenadas UTM → Latitude/Longitude
+### Step 2 — Converting coordinates UTM → Latitude/Longitude
 
-> **Arquivo:** `utils/wms.py` → função `calcular_bbox_latlon`
-> **Biblioteca:** `pyproj`
+> **File:** `utils/wms.py` → `calcular_bbox_latlon` function
+> **Library:** `pyproj`
 
-As coordenadas no CSV estão no sistema **EPSG:31984** (UTM zona 24S, em metros). O servidor WMS do GeoBases, porém, exige as coordenadas em **EPSG:4326** (latitude e longitude em graus decimais).
+The coordinates in the CSV are in the **EPSG:31984** system (UTM zone 24S, in meters). However, the GeoBases WMS server requires coordinates in **EPSG:4326** (latitude and longitude in decimal degrees).
 
 ```python
 transformador = Transformer.from_crs("EPSG:31984", "EPSG:4326", always_xy=True)
@@ -143,116 +143,116 @@ lon_min, lat_min = transformador.transform(xmin_utm, ymin_utm)
 lon_max, lat_max = transformador.transform(xmax_utm, ymax_utm)
 ```
 
-A biblioteca **pyproj** realiza essa projeção cartográfica com precisão geodésica. A partir do ponto central `(x, y)` e do buffer em metros, o código cria uma caixa quadrada ao redor do ponto em UTM, e depois converte os quatro cantos dessa caixa para lat/lon — obtendo o **bounding box** (bbox) que delimita a região geográfica a recortar.
+The **pyproj** library performs this cartographic projection with geodetic precision. From the central point `(x, y)` and the buffer in meters, the code creates a square box around the point in UTM, and then converts the four corners of this box to lat/lon — obtaining the **bounding box** (bbox) that delimits the geographic region to crop.
 
-O `Transformer` é criado uma única vez e reutilizado em cache para todas as coordenadas, evitando overhead.
+The `Transformer` is created only once and reused from cache for all coordinates, avoiding overhead.
 
 ---
 
-### Etapa 3 — Conexão e validação do serviço WMS
+### Step 3 — Connection and validation of the WMS service
 
-> **Arquivo:** `utils/wms.py` → funções `conectar_wms` e `validar_camada`
-> **Biblioteca:** `OWSLib`
+> **File:** `utils/wms.py` → `conectar_wms` and `validar_camada` functions
+> **Library:** `OWSLib`
 
-Antes de qualquer download, o pipeline se conecta ao servidor WMS do GeoBases para verificar se ele está respondendo e se as camadas necessárias existem.
+Before any download, the pipeline connects to the GeoBases WMS server to verify if it is responding and if the required layers exist.
 
 ```python
 wms = WebMapService("https://ide.geobases.es.gov.br/geoserver/ows", version="1.3.0")
 ```
 
-A biblioteca **OWSLib** implementa o protocolo **OGC WMS** (Web Map Service) — um padrão internacional para servidores de mapas. Com ela, a simples chamada `WebMapService(url)` já faz o handshake com o servidor, baixa o `GetCapabilities` (catálogo de camadas disponíveis) e expõe o resultado em Python.
+The **OWSLib** library implements the **OGC WMS** (Web Map Service) protocol — an international standard for map servers. With it, the simple call `WebMapService(url)` performs the handshake with the server, downloads the `GetCapabilities` (catalog of available layers), and exposes the result in Python.
 
-Depois da conexão, o pipeline verifica se as duas camadas que serão usadas (`camada_satelite` e `camada_uso_solo`) de fato existem no servidor. Se não existirem, um aviso é registrado no log mas a execução continua — pois a validação é feita só via OWSLib, enquanto os downloads usam `aiohttp` diretamente.
+After connecting, the pipeline checks if the two layers that will be used (`camada_satelite` and `camada_uso_solo`) actually exist on the server. If they do not exist, a warning is logged but the execution continues — because the validation is only done via OWSLib, while the downloads use `aiohttp` directly.
 
-A conexão fica em cache global (`_conexao_wms`) para não se repetir a cada imagem.
+The connection is kept in a global cache (`_conexao_wms`) so it is not repeated for every image.
 
 ---
 
-### Etapa 4 — Download assíncrono das imagens
+### Step 4 — Asynchronous image download
 
-> **Arquivo:** `utils/wms.py` → funções `requisitar_imagem_wms_async` e `baixar_imagem_async`
-> **Bibliotecas:** `aiohttp`, `asyncio`
+> **File:** `utils/wms.py` → `requisitar_imagem_wms_async` and `baixar_imagem_async` functions
+> **Libraries:** `aiohttp`, `asyncio`
 
-Esta é a etapa mais crítica e complexa do pipeline. Para cada coordenada, o pipeline precisa baixar **duas imagens** (satélite + segmentado), e isso deve acontecer para **centenas ou milhares de coordenadas** — de forma rápida.
+This is the most critical and complex step of the pipeline. For each coordinate, the pipeline needs to download **two images** (satellite + segmented), and this must happen for **hundreds or thousands of coordinates** — quickly.
 
-A solução usa **programação assíncrona** com `asyncio` e `aiohttp`:
+The solution uses **asynchronous programming** with `asyncio` and `aiohttp`:
 
 ```python
-# Baixar as duas imagens de uma mesma coordenada ao mesmo tempo
+# Download both images for the same coordinate at the same time
 status_satelite, status_segmentado = await asyncio.gather(
     _baixar_uma_imagem_async(sessao, cfg, cfg["camada_satelite"], bbox, caminho_satelite),
     _baixar_uma_imagem_async(sessao, cfg, cfg["camada_uso_solo"], bbox, caminho_segmentado),
 )
 ```
 
-**Como funciona na prática:**
+**How it works in practice:**
 
-- **`asyncio`** é o motor de concorrência do Python. Em vez de bloquear o programa enquanto espera a resposta HTTP, ele "pausa" a operação atual e executa outras enquanto aguarda — como um garçom que anota o pedido de uma mesa e já atende a próxima sem esperar a cozinha.
+- **`asyncio`** is Python's concurrency engine. Instead of blocking the program while waiting for the HTTP response, it "pauses" the current operation and executes others while waiting — like a waiter taking an order from one table and immediately attending the next without waiting for the kitchen.
 
-- **`aiohttp`** é o cliente HTTP assíncrono. Ele envia a requisição `GetMap` ao servidor WMS e aguarda a resposta sem travar o processo. Usa um pool de conexões TCP (`TCPConnector`) para reutilizar conexões abertas ao servidor, reduzindo o custo de handshake.
+- **`aiohttp`** is the asynchronous HTTP client. It sends the `GetMap` request to the WMS server and waits for the response without blocking the process. It uses a TCP connection pool (`TCPConnector`) to reuse open connections to the server, reducing handshake costs.
 
-- **`asyncio.Semaphore`** limita quantas coordenadas são processadas ao mesmo tempo (controlado por `--workers`). Isso evita sobrecarregar o servidor do GeoBases com dezenas de requisições simultâneas.
+- **`asyncio.Semaphore`** limits how many coordinates are processed simultaneously (controlled by `--workers`). This prevents overloading the GeoBases server with dozens of concurrent requests.
 
-- **`asyncio.gather`** dispara o download do satélite e do segmentado **em paralelo** para a mesma coordenada — as duas requisições viajam ao servidor ao mesmo tempo.
+- **`asyncio.gather`** triggers the download of the satellite and the segmented image **in parallel** for the same coordinate — both requests travel to the server at the same time.
 
-Em caso de falha (timeout, erro HTTP), o código tenta novamente até 3 vezes com pausa de 2 segundos entre tentativas, antes de registrar o erro no manifesto.
+In case of a failure (timeout, HTTP error), the code retries up to 3 times with a 2-second pause between attempts before logging the error in the manifest.
 
-A requisição WMS enviada é um `GetMap` com os parâmetros:
+The sent WMS request is a `GetMap` with the parameters:
 
 ```
 SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap
-&LAYERS=<nome_da_camada>
+&LAYERS=<layer_name>
 &BBOX=<lat_min,lon_min,lat_max,lon_max>
-&WIDTH=<largura>&HEIGHT=<altura>
+&WIDTH=<width>&HEIGHT=<height>
 &CRS=EPSG:4326&FORMAT=image/png
 ```
 
-> **Atenção WMS 1.3.0:** nesta versão do protocolo, o EPSG:4326 exige que o bbox seja passado na ordem `lat,lon` (invertida em relação ao convencional). O código já trata isso em `montar_parametros_wms`.
+> **WMS 1.3.0 Warning:** in this protocol version, EPSG:4326 requires the bbox to be passed in the `lat,lon` order (inverted compared to the convention). The code already handles this in `montar_parametros_wms`.
 
 ---
 
-### Etapa 5 — Conversão de PNG para GeoTIFF
+### Step 5 — PNG to GeoTIFF conversion
 
-> **Arquivo:** `utils/wms.py` → função `salvar_como_geotiff`
-> **Bibliotecas:** `Pillow`, `rasterio`, `numpy`
+> **File:** `utils/wms.py` → `salvar_como_geotiff` function
+> **Libraries:** `Pillow`, `rasterio`, `numpy`
 
-O servidor WMS retorna as imagens em formato **PNG**. Para que sejam úteis em análises geoespaciais (como segmentação por redes neurais), elas precisam ser convertidas para **GeoTIFF georreferenciado** — um formato que embute as coordenadas geográficas dentro do arquivo.
+The WMS server returns the images in **PNG** format. For them to be useful in geospatial analysis (such as neural network segmentation), they must be converted to **georeferenced GeoTIFF** — a format that embeds geographic coordinates inside the file.
 
 ```python
-# 1. Decodificar o PNG binário em array numérico
+# 1. Decode the binary PNG into a numerical array
 imagem_pil = Image.open(io.BytesIO(conteudo_binario)).convert("RGB")
-array_imagem = np.array(imagem_pil)   # shape: (altura, largura, 3)
+array_imagem = np.array(imagem_pil)   # shape: (height, width, 3)
 
-# 2. Calcular a transformação afim que mapeia pixels → coordenadas
+# 2. Calculate the affine transformation mapping pixels → coordinates
 transform_afim = from_bounds(lon_min, lat_min, lon_max, lat_max, largura, altura)
 
-# 3. Escrever o GeoTIFF com metadados geoespaciais
+# 3. Write the GeoTIFF with geospatial metadata
 with rasterio.open(caminho, "w", driver="GTiff", crs=CRS.from_epsg(4326),
                    transform=transform_afim, ...) as dst:
     dst.write(array_imagem.transpose(2, 0, 1))
 ```
 
-Cada biblioteca tem um papel específico:
+Each library has a specific role:
 
-- **Pillow** (`PIL.Image`) decodifica os bytes binários recebidos do servidor (que estão em formato PNG comprimido) e os converte em uma imagem RGB em memória.
+- **Pillow** (`PIL.Image`) decodes the binary bytes received from the server (which are compressed PNG format) and converts them into an in-memory RGB image.
 
-- **numpy** converte a imagem Pillow em um array tridimensional de números inteiros `(altura × largura × 3 canais)`. Esta representação numérica é o que `rasterio` consegue escrever em disco.
+- **numpy** converts the Pillow image into a three-dimensional array of integers `(height × width × 3 channels)`. This numerical representation is what `rasterio` can write to disk.
 
-- **rasterio** é a biblioteca de referência para I/O de dados raster geoespaciais em Python. Ela escreve o array como um GeoTIFF com:
-  - **CRS** (Sistema de Referência de Coordenadas): `EPSG:4326`
-  - **Transform afim**: matriz que associa cada pixel a uma posição geográfica real
-  - **Compressão LZW**: reduz o tamanho do arquivo sem perda de qualidade
+- **rasterio** is the standard library for geospatial raster data I/O in Python. It writes the array as a GeoTIFF with:
+  - **CRS** (Coordinate Reference System): `EPSG:4326`
+  - **Affine transform**: a matrix associating each pixel to an actual geographic position
+  - **LZW compression**: reduces file size without quality loss
 
-Como a conversão PNG → GeoTIFF é uma operação **CPU-bound** (usa processador, não espera I/O), ela é executada em uma thread separada via `loop.run_in_executor(None, ...)` — para não bloquear o event loop assíncrono enquanto outras imagens estão sendo baixadas.
+Because the PNG → GeoTIFF conversion is a **CPU-bound** operation (uses processor, does not wait for I/O), it is executed in a separate thread via `loop.run_in_executor(None, ...)` — preventing the asynchronous event loop from blocking while other images are being downloaded.
 
 ---
 
-### Etapa 6 — Registro no Manifesto
+### Step 6 — Registering in the Manifest
 
-> **Arquivo:** `utils/manifesto.py` → funções `inicializar_manifesto` e `registrar_resultado`
-> **Biblioteca:** `csv` (biblioteca padrão do Python)
+> **File:** `utils/manifesto.py` → `inicializar_manifesto` and `registrar_resultado` functions
+> **Library:** `csv` (Python standard library)
 
-Após cada par de imagens ser processado, o resultado é imediatamente registrado no manifesto CSV.
+After each pair of images is processed, the result is immediately recorded in the CSV manifest.
 
 ```python
 registrar_resultado(
@@ -265,93 +265,90 @@ registrar_resultado(
 )
 ```
 
-O manifesto é um arquivo CSV em `artifacts/dataset_manifesto.csv` que contém uma linha por coordenada processada, com colunas:
+The manifest is a CSV file at `artifacts/dataset_manifesto.csv` containing one row per processed coordinate, with columns:
 
-| Coluna | Descrição |
+| Column | Description |
 |---|---|
-| `numero_amostra` | Número sequencial (1, 2, 3, ...) |
-| `cod_imovel` | Código do imóvel no CAR |
-| `x`, `y` | Coordenadas UTM originais |
-| `bbox_xmin/ymin/xmax/ymax` | Bounding box em graus decimais |
-| `status_satelite` | `ok` ou `erro` |
-| `status_uso_solo` | `ok` ou `erro` |
-| `data_download` | Timestamp ISO 8601 do momento do download |
+| `numero_amostra` | Sequential number (1, 2, 3, ...) |
+| `cod_imovel` | Property code in CAR |
+| `x`, `y` | Original UTM coordinates |
+| `bbox_xmin/ymin/xmax/ymax` | Bounding box in decimal degrees |
+| `status_satelite` | `ok` or `erro` |
+| `status_uso_solo` | `ok` or `erro` |
+| `data_download` | ISO 8601 timestamp of the download moment |
 
-A biblioteca padrão **`csv`** do Python é usada com `DictWriter`, que escreve dicionários diretamente como linhas CSV — uma por vez, em modo append (`"a"`). Isso garante que o manifesto seja atualizado em tempo real: mesmo que o pipeline seja interrompido no meio, as amostras já processadas ficam registradas.
+Python's standard **`csv`** library is used with `DictWriter`, which writes dictionaries directly as CSV rows — one at a time, in append mode (`"a"`). This ensures the manifest is updated in real-time: even if the pipeline is interrupted halfway, the processed samples remain recorded.
 
 ---
 
-### Barra de Progresso
+### Progress Bar
 
-> **Biblioteca:** `tqdm`
+> **Library:** `tqdm`
 
-Durante o processamento, o terminal exibe uma barra de progresso em tempo real:
+During processing, the terminal displays a real-time progress bar:
 
 ```
 Baixando imagens:  42%|████████████          | 420/1000 [03:21<04:38,  2.09img/s]
 ```
 
-A biblioteca **tqdm** envolve o loop de processamento e atualiza automaticamente a barra a cada imagem concluída, exibindo: percentual, contagem, tempo decorrido, tempo estimado e velocidade (imagens/segundo).
+The **tqdm** library wraps the processing loop and automatically updates the bar for each completed image, displaying: percentage, count, elapsed time, estimated time, and speed (images/second).
 
 ---
 
 ### Logging
 
-> **Biblioteca:** `logging` (biblioteca padrão do Python)
+> **Library:** `logging` (Python standard library)
 
-Paralelamente à barra de progresso, todos os eventos do pipeline são registrados com timestamp no arquivo `logs/execucao.log` e exibidos no terminal:
+Running parallel to the progress bar, all pipeline events are recorded with a timestamp in the `logs/execucao.log` file and displayed in the terminal:
 
 ```
-2025-03-05 14:32:01 [INFO] Conectando ao serviço WMS: https://...
-2025-03-05 14:32:03 [INFO] Camada validada: geonode:ijsn-ortofoto...
-2025-03-05 14:32:03 [INFO] CSV carregado: 3000 coordenadas encontradas
+2025-03-05 14:32:01 [INFO] Connecting to WMS service: https://...
+2025-03-05 14:32:03 [INFO] Layer validated: geonode:ijsn-ortofoto...
+2025-03-05 14:32:03 [INFO] CSV loaded: 3000 coordinates found
 2025-03-05 14:32:45 [INFO] [amostra_42] SATELITE OK
-2025-03-05 14:32:45 [WARNING] Timeout na tentativa 1/3
+2025-03-05 14:32:45 [WARNING] Timeout on attempt 1/3
 ```
 
-A biblioteca padrão **`logging`** do Python usa dois `handlers` simultâneos: um `FileHandler` (grava no arquivo de log) e um `StreamHandler` (exibe no terminal). O nível `INFO` registra o fluxo normal; erros e avisos aparecem em `WARNING` e `ERROR`.
+Python's standard **`logging`** library uses two simultaneous `handlers`: a `FileHandler` (saves to the log file) and a `StreamHandler` (displays in the terminal). The `INFO` level records normal flow; errors and warnings appear in `WARNING` and `ERROR`.
 
 ---
 
-## Diagrama do Fluxo
+## Flow Diagram
 
 ```
 coordenadas.csv
       │
       ▼
- [pandas] lê o CSV
+ [pandas] reads the CSV
       │
-      ▼ para cada coordenada (em paralelo via asyncio.Semaphore)
+      ▼ for each coordinate (in parallel via asyncio.Semaphore)
       │
-      ├──► [pyproj] converte UTM → lat/lon → calcula bbox
+      ├──► [pyproj] converts UTM → lat/lon → calculates bbox
       │
-      ├──► [aiohttp + asyncio] envia GetMap ao GeoBases WMS
+      ├──► [aiohttp + asyncio] sends GetMap to GeoBases WMS
       │         │                     │
-      │    SATELITE              SEGMENTADO
-      │    (em paralelo via asyncio.gather)
+      │    SATELLITE              SEGMENTED
+      │    (in parallel via asyncio.gather)
       │
-      ├──► [Pillow] decodifica PNG → imagem RGB
-      ├──► [numpy] converte imagem → array numérico
-      ├──► [rasterio] grava GeoTIFF georreferenciado
+      ├──► [Pillow] decodes PNG → RGB image
+      ├──► [numpy] converts image → numerical array
+      ├──► [rasterio] writes georeferenced GeoTIFF
       │
-      └──► [csv] registra resultado no manifesto
+      └──► [csv] registers result in manifest
                     │
                     ▼
-         [tqdm] atualiza barra de progresso
-         [logging] grava eventos no log
+         [tqdm] updates progress bar
+         [logging] records events in log
 ```
 
 ---
 
-## Formato do CSV de Entrada
+## Input CSV Format
 
-Separador: **ponto-e-vírgula** (`;`)
+Separator: **semicolon** (`;`)
 
-| Coluna | Tipo | Descrição |
+| Column | Type | Description |
 |---|---|---|
-| `cod_imovel` | string | Código do imóvel no CAR |
-| `x` | float | Coordenada X em metros (EPSG:31984 — UTM 24S) |
-| `y` | float | Coordenada Y em metros (EPSG:31984) |
-
----
-
+| `cod_imovel` | string | Property code in CAR |
+| `x` | float | X coordinate in meters (EPSG:31984 — UTM 24S) |
+| `y` | float | Y coordinate in meters (EPSG:31984) |
