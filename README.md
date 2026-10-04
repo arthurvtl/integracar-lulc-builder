@@ -1,32 +1,32 @@
-# 🛰️ IntegraCar — Image Extraction Pipeline
+# 🛰️ IntegraCar — Satellite Image Extraction Pipeline
 
-Automated pipeline that downloads satellite images and land use maps from **GeoBases do Espírito Santo** for rural properties registered in the CAR (Rural Environmental Registry - Cadastro Ambiental Rural).
+Automated pipeline designed to download georeferenced high-resolution satellite imagery and thematic land use/land cover classification maps from the **GeoBases do Espírito Santo** spatial data infrastructure for rural properties registered within the CAR (Rural Environmental Registry — *Cadastro Ambiental Rural*).
 
-For each coordinate listed in a CSV file, the pipeline produces two georeferenced GeoTIFF files:
+For each geographic coordinate listed in an input CSV dataset, the pipeline generates two synchronized, georeferenced GeoTIFF scenes:
 
-- **SATELLITE** — raw orthophotomosaic (KOMPSAT 2019-2020)
-- **SEGMENTED** — land use and land cover map (IJSN 2019)
+- **SATELLITE** — Raw orthophotomosaic (KOMPSAT 2019–2020)
+- **SEGMENTED** — Land use and land cover (LULC) classification map (IJSN 2019)
 
 ---
 
 ## Prerequisites
 
-- **Python 3.8+** installed (adding it to PATH is recommended).
-- CSV file with the coordinates (see the expected format at the bottom of the page).
+- **Python 3.8+** installed with environment variables configured in `PATH`.
+- A CSV file containing property spatial coordinates (see specification below).
 
 ---
 
 ## Installation and Execution
 
 ### Step 1: Clone the repository
-Open your terminal (Command Prompt, PowerShell, or Linux/Mac Terminal) and clone the project:
+Open a terminal shell and clone the project repository:
 ```bash
-git clone https://github.com/integraCAR/car-imagens-downloader.git
-cd car-imagens-downloader
+git clone https://github.com/integraCAR/car-images-downloader.git
+cd car-images-downloader
 ```
 
-### Step 2: Create a virtual environment (Recommended)
-To prevent conflicts with other libraries on your computer, create and activate a virtual environment:
+### Step 2: Configure a Virtual Environment (Recommended)
+To isolate project dependencies and avoid environment conflicts, initialize and activate a virtual environment:
 
 **On Windows:**
 ```bash
@@ -34,321 +34,348 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-**On Linux/Mac:**
+**On Linux/macOS:**
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-### Step 3: Install dependencies
-With the environment activated (you will see a `(venv)` in the terminal), install the required libraries:
+### Step 3: Install Required Dependencies
+With the virtual environment active, install the runtime packages:
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 4: Run the extractor
-Execute the `extrator.py` script by providing your CSV file and the destination folder for the images.
+### Step 4: Execute the Extraction Pipeline
+Execute `extractor.py` by supplying the input CSV dataset and the target output directory.
 
-**Basic example:**
+**Standard execution:**
 ```bash
-python extrator.py --csv coordenadas_treino_amostra.csv --caminho ./saida
+python extractor.py --csv sample_train_coordinates.csv --output ./output
 ```
 
-**Complete example (customizing parameters):**
+**Custom execution with parameter overrides:**
 ```bash
-python extrator.py \
-  --csv coordenadas_treino_amostra.csv \
-  --caminho ./saida \
+python extractor.py \
+  --csv sample_train_coordinates.csv \
+  --output ./output \
   --buffer 1024 \
-  --largura 1024 \
-  --altura 1024 \
-  --qtd 1000
+  --width 1024 \
+  --height 1024 \
+  --limit 1000
 ```
-*(Tip: on Windows PowerShell, if you get an error when breaking lines with `\`, write the entire command on a single line).*
+*(Note: On Windows PowerShell, multi-line backtick `` ` `` or single-line commands are recommended if backslash line continuations are unsupported).*
 
-**To view help:**
+**To display command-line help:**
 ```bash
-python extrator.py --help
+python extractor.py --help
 ```
 
 ---
 
-## Parameters
+## Command-Line Parameters Guide
 
-| Parameter | Required | Description | Default |
-|---|---|---|---|
-| `--csv FILE` | ✅ | CSV with columns `cod_imovel`, `x`, `y` (separated by `;`) | — |
-| `--caminho FOLDER` | ✅ | Destination folder where subfolders will be created | — |
-| `--buffer METERS` | — | Half the side length of the geographic crop in meters | `1024` |
-| `--largura PIXELS` | — | Output image width in pixels | `1024` |
-| `--altura PIXELS` | — | Output image height in pixels | `1024` |
-| `--qtd N` | — | Limits to the first N rows of the CSV | all |
-| `--workers N` | — | Simultaneous parallel downloads | `4` |
+All execution parameters can be specified via command-line arguments when invoking `extractor.py`. When an optional parameter is omitted, the pipeline automatically applies the default constant defined in `config.py`.
+
+### Parameter Reference
+
+| Parameter | Type | Required | Default | Description |
+|---|---|:---:|---|---|
+| `--csv FILE_PATH` | string | ✅ Yes | — | Absolute or relative path to the input CSV file containing spatial coordinates. Expected delimiter: `;`. Columns: `property_id` (or `cod_imovel`), `x`, `y`. |
+| `--output DIR_PATH` | string | ✅ Yes | — | Target directory path where raster subdirectories (`SATELLITE/` and `SEGMENTED/`) are created. Created automatically if missing. |
+| `--buffer METERS` | integer | Optional | `1024` | Half-side radius in meters around each centroid coordinate. Defines a square spatial window of side length `2 * buffer` meters. |
+| `--width PIXELS` | integer | Optional | `1024` | Horizontal raster resolution in pixels for both output GeoTIFF images. |
+| `--height PIXELS` | integer | Optional | `1024` | Vertical raster resolution in pixels for both output GeoTIFF images. |
+| `--limit N` | integer | Optional | `None` *(all)* | Caps extraction to the first N coordinates of the input dataset. Useful for smoke tests and small experimental batches. |
+| `--workers N` | integer | Optional | `4` | Maximum number of concurrent asynchronous extraction workers fetching tiles simultaneously. |
+
+### Backward-Compatible Aliases
+
+For convenience and compatibility across legacy workflows, the following parameter aliases are fully supported:
+
+- `--output`: `-o`, `--path`, `--caminho`
+- `--width`: `--largura`
+- `--height`: `--altura`
+- `--limit`: `--count`, `--qtd`
 
 ---
 
-## Output Structure
+### Spatial Resolution & Ground Sampling Distance (GSD)
+
+The combination of `--buffer` (geographic metric extent) and `--width`/`--height` (pixel grid dimension) dictates the resulting **Ground Sampling Distance (GSD)** or spatial resolution per pixel:
+
+$$\text{Spatial Resolution (GSD)} = \frac{2 \times \text{buffer}}{\text{width}} \quad [\text{meters per pixel}]$$
+
+#### Common Configurations:
+
+| Buffer (`--buffer`) | Bounding Box Dimensions | Pixel Size (`--width` × `--height`) | Resulting Spatial Resolution (GSD) | Recommended Use Case |
+|---|---|---|---|---|
+| `1024` m | 2,048 m × 2,048 m (~2.0 km) | `1024` × `1024` px | **2.0 m / pixel** | **Default:** Standard regional property context |
+| `512` m | 1,024 m × 1,024 m (~1.0 km) | `512` × `512` px | **2.0 m / pixel** | Lightweight testing & rapid prototyping |
+| `512` m | 1,024 m × 1,024 m (~1.0 km) | `1024` × `1024` px | **1.0 m / pixel** | Higher spatial detail for localized canopy analysis |
+| `2048` m | 4,096 m × 4,096 m (~4.1 km) | `1024` × `1024` px | **4.0 m / pixel** | Macro-landscape and watershed overview |
+
+---
+
+### Practical Execution Recipes
+
+#### 1. Smoke Test / Verification Batch (10 coordinates)
+To quickly verify that the remote WMS server is responding and credentials/layers are operational without downloading the entire dataset:
+```bash
+python extractor.py \
+  --csv sample_train_coordinates.csv \
+  --output ./output_test \
+  --limit 10
+```
+
+#### 2. Standard Production Extraction
+Processes the complete coordinate dataset using the default 2,048 m × 2,048 m bounding box and 1,024 × 1,024 pixel grid:
+```bash
+python extractor.py \
+  --csv sample_train_coordinates.csv \
+  --output ./output
+```
+
+#### 3. High-Detail Localized Extraction (1.0 m/px)
+Extracts a tighter 1 km² area around each farm centroid at 1.0 meter/pixel resolution:
+```bash
+python extractor.py \
+  --csv sample_train_coordinates.csv \
+  --output ./output_highres \
+  --buffer 512 \
+  --width 1024 \
+  --height 1024
+```
+
+#### 4. Throttled Concurrency for Unstable Connections
+If the upstream WMS server experiences latency spikes, HTTP 504 gateway timeouts, or connection resets, reduce concurrency to 1 or 2 workers:
+```bash
+python extractor.py \
+  --csv sample_train_coordinates.csv \
+  --output ./output \
+  --workers 2
+```
+
+---
+
+## Directory and Output Structure
 
 ```
-<--caminho>/
-├── SATELITE/
-│   ├── amostra_1.tif
-│   ├── amostra_2.tif
+<--output>/
+├── SATELLITE/
+│   ├── sample_1.tif
+│   ├── sample_2.tif
 │   └── ...
-└── SEGMENTADO/
-    ├── amostra_1.tif
-    ├── amostra_2.tif
+└── SEGMENTED/
+    ├── sample_1.tif
+    ├── sample_2.tif
     └── ...
 
 artifacts/
-└── dataset_manifesto.csv   ← status record of each download
+└── dataset_manifest.csv   ← Real-time status manifest of each extracted coordinate
 
 logs/
-└── execucao.log            ← complete execution log
+└── execution.log          ← Comprehensive operational execution log
 ```
 
 ---
 
-## How the Pipeline Works — Step by Step
+## Pipeline Architecture and Execution Flow
 
-The pipeline consists of **6 sequential steps**, executed by `extrator.py`. The internal steps of each download are performed in a parallel and asynchronous manner.
+The extraction pipeline consists of **six sequential phases**, orchestrated by `extractor.py`. Within each coordinate batch, requests are dispatched asynchronously.
 
 ---
 
-### Step 1 — Reading the coordinates CSV
+### Step 1 — Ingestion of Spatial Coordinates
 
-> **File:** `extrator.py` → `executar_pipeline_async` function
-> **Library:** `pandas`
+> **Module:** `extractor.py` → `run_pipeline_async()`  
+> **Dependency:** `pandas`
 
-The pipeline begins by reading the CSV file provided via `--csv`. This file contains one row per rural property, with the property code and its geographic coordinates in UTM.
+The pipeline parses the semicolon-delimited CSV specified via `--csv`. The file defines one rural property per line, detailing its unique identifier code and planar UTM coordinates.
 
 ```python
-dataframe = pd.read_csv(cfg["arquivo_csv"], sep=";")
+dataframe = pd.read_csv(cfg["csv_file"], sep=cfg["csv_separator"])
 ```
 
-The **pandas** library (`pd.read_csv`) reads the file and transforms each row into a `DataFrame` row — an in-memory table structure that allows for efficient data filtering, iteration, and manipulation. If the user passed `--qtd 1000`, the `DataFrame` is immediately truncated to the first 1000 rows with `.head(1000)` before any download starts.
+The table is converted into an in-memory `pandas.DataFrame`. If `--limit` is specified, the dataset is truncated immediately using `.head(N)` to avoid extraneous coordinate allocations.
 
 ---
 
-### Step 2 — Converting coordinates UTM → Latitude/Longitude
+### Step 2 — Coordinate Reference System Transformation (UTM → Lat/Lon)
 
-> **File:** `utils/wms.py` → `calcular_bbox_latlon` function
-> **Library:** `pyproj`
+> **Module:** `utils/wms.py` → `calculate_bbox_latlon()`  
+> **Dependency:** `pyproj`
 
-The coordinates in the CSV are in the **EPSG:31984** system (UTM zone 24S, in meters). However, the GeoBases WMS server requires coordinates in **EPSG:4326** (latitude and longitude in decimal degrees).
+Coordinate records originate in planar spatial units: **EPSG:31984** (SIRGAS 2000 / UTM Zone 24S in meters). The GeoBases OGC WMS service requires bounds in geographic coordinate degrees: **EPSG:4326** (WGS 84).
 
 ```python
-transformador = Transformer.from_crs("EPSG:31984", "EPSG:4326", always_xy=True)
-lon_min, lat_min = transformador.transform(xmin_utm, ymin_utm)
-lon_max, lat_max = transformador.transform(xmax_utm, ymax_utm)
+transformer = Transformer.from_crs("EPSG:31984", "EPSG:4326", always_xy=True)
+lon_min, lat_min = transformer.transform(xmin_proj, ymin_proj)
+lon_max, lat_max = transformer.transform(xmax_proj, ymax_proj)
 ```
 
-The **pyproj** library performs this cartographic projection with geodetic precision. From the central point `(x, y)` and the buffer in meters, the code creates a square box around the point in UTM, and then converts the four corners of this box to lat/lon — obtaining the **bounding box** (bbox) that delimits the geographic region to crop.
+The `pyproj` library applies geodetic transformations. Given a centroid point `(x, y)` and a buffer distance in meters, the algorithm constructs an orthogonal square envelope in projected space, transforming the vertices into geographic bounding box extents `(minx_lon, miny_lat, maxx_lon, maxy_lat)`.
 
-The `Transformer` is created only once and reused from cache for all coordinates, avoiding overhead.
+Cached transformer instances are shared across calls to eliminate instantiation overhead.
 
 ---
 
-### Step 3 — Connection and validation of the WMS service
+### Step 3 — Service Validation via OGC WMS Protocol
 
-> **File:** `utils/wms.py` → `conectar_wms` and `validar_camada` functions
-> **Library:** `OWSLib`
+> **Module:** `utils/wms.py` → `connect_wms()` and `validate_layer()`  
+> **Dependency:** `OWSLib`
 
-Before any download, the pipeline connects to the GeoBases WMS server to verify if it is responding and if the required layers exist.
+Before initiating image retrieval, the pipeline initiates a handshake with the GeoBases WMS server to confirm service health and layer existence.
 
 ```python
 wms = WebMapService("https://ide.geobases.es.gov.br/geoserver/ows", version="1.3.0")
 ```
 
-The **OWSLib** library implements the **OGC WMS** (Web Map Service) protocol — an international standard for map servers. With it, the simple call `WebMapService(url)` performs the handshake with the server, downloads the `GetCapabilities` (catalog of available layers), and exposes the result in Python.
-
-After connecting, the pipeline checks if the two layers that will be used (`camada_satelite` and `camada_uso_solo`) actually exist on the server. If they do not exist, a warning is logged but the execution continues — because the validation is only done via OWSLib, while the downloads use `aiohttp` directly.
-
-The connection is kept in a global cache (`_conexao_wms`) so it is not repeated for every image.
+`OWSLib` executes the initial `GetCapabilities` query, parsing the service schema. The pipeline verifies that the requested layer typenames (`satellite_layer` and `land_cover_layer`) are present in the catalog.
 
 ---
 
-### Step 4 — Asynchronous image download
+### Step 4 — Asynchronous Parallel Image Retrieval
 
-> **File:** `utils/wms.py` → `requisitar_imagem_wms_async` and `baixar_imagem_async` functions
-> **Libraries:** `aiohttp`, `asyncio`
+> **Module:** `utils/wms.py` → `request_wms_image_async()` and `download_image_async()`  
+> **Dependencies:** `aiohttp`, `asyncio`
 
-This is the most critical and complex step of the pipeline. For each coordinate, the pipeline needs to download **two images** (satellite + segmented), and this must happen for **hundreds or thousands of coordinates** — quickly.
-
-The solution uses **asynchronous programming** with `asyncio` and `aiohttp`:
+For every coordinate, two raster products must be fetched concurrently: the orthophotomosaic and the thematic classification map.
 
 ```python
-# Download both images for the same coordinate at the same time
-status_satelite, status_segmentado = await asyncio.gather(
-    _baixar_uma_imagem_async(sessao, cfg, cfg["camada_satelite"], bbox, caminho_satelite),
-    _baixar_uma_imagem_async(sessao, cfg, cfg["camada_uso_solo"], bbox, caminho_segmentado),
+# Concurrently fetch both raster layers for a given coordinate
+satellite_status, land_cover_status = await asyncio.gather(
+    _download_single_image_async(session, cfg, cfg["satellite_layer"], bbox, satellite_path),
+    _download_single_image_async(session, cfg, cfg["land_cover_layer"], bbox, segmented_path),
 )
 ```
 
-**How it works in practice:**
+**Key concurrency mechanisms:**
 
-- **`asyncio`** is Python's concurrency engine. Instead of blocking the program while waiting for the HTTP response, it "pauses" the current operation and executes others while waiting — like a waiter taking an order from one table and immediately attending the next without waiting for the kitchen.
+- **`asyncio`**: Coordinates non-blocking event-loop routines.
+- **`aiohttp`**: Manages persistent connection pools (`TCPConnector`), reusing active TCP channels and mitigating repeated SSL/TLS handshakes.
+- **`asyncio.Semaphore`**: Regulates concurrent connections according to `--workers` to protect remote WMS infrastructure from load throttling.
+- **`asyncio.gather`**: Dispatches requests for SATELLITE and SEGMENTED tiles simultaneously.
 
-- **`aiohttp`** is the asynchronous HTTP client. It sends the `GetMap` request to the WMS server and waits for the response without blocking the process. It uses a TCP connection pool (`TCPConnector`) to reuse open connections to the server, reducing handshake costs.
-
-- **`asyncio.Semaphore`** limits how many coordinates are processed simultaneously (controlled by `--workers`). This prevents overloading the GeoBases server with dozens of concurrent requests.
-
-- **`asyncio.gather`** triggers the download of the satellite and the segmented image **in parallel** for the same coordinate — both requests travel to the server at the same time.
-
-In case of a failure (timeout, HTTP error), the code retries up to 3 times with a 2-second pause between attempts before logging the error in the manifest.
-
-The sent WMS request is a `GetMap` with the parameters:
-
-```
-SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap
-&LAYERS=<layer_name>
-&BBOX=<lat_min,lon_min,lat_max,lon_max>
-&WIDTH=<width>&HEIGHT=<height>
-&CRS=EPSG:4326&FORMAT=image/png
-```
-
-> **WMS 1.3.0 Warning:** in this protocol version, EPSG:4326 requires the bbox to be passed in the `lat,lon` order (inverted compared to the convention). The code already handles this in `montar_parametros_wms`.
+Automatic retry logic handles transient timeouts or connection resets (up to 3 attempts with exponential/configurable delays).
 
 ---
 
-### Step 5 — PNG to GeoTIFF conversion
+### Step 5 — Raster Encoding and GeoTIFF Georeferencing
 
-> **File:** `utils/wms.py` → `salvar_como_geotiff` function
-> **Libraries:** `Pillow`, `rasterio`, `numpy`
+> **Module:** `utils/wms.py` → `save_as_geotiff()`  
+> **Dependencies:** `Pillow`, `rasterio`, `numpy`
 
-The WMS server returns the images in **PNG** format. For them to be useful in geospatial analysis (such as neural network segmentation), they must be converted to **georeferenced GeoTIFF** — a format that embeds geographic coordinates inside the file.
+The WMS service serves raster images as uncompressed or PNG binary streams. To enable direct downstream geospatial training and GIS compatibility, these payloads are converted into **georeferenced GeoTIFF** files.
 
 ```python
-# 1. Decode the binary PNG into a numerical array
-imagem_pil = Image.open(io.BytesIO(conteudo_binario)).convert("RGB")
-array_imagem = np.array(imagem_pil)   # shape: (height, width, 3)
+# 1. Decode binary stream into numeric RGB array
+pil_image = Image.open(io.BytesIO(binary_content)).convert("RGB")
+raster_array = np.array(pil_image)   # shape: (height, width, 3)
 
-# 2. Calculate the affine transformation mapping pixels → coordinates
-transform_afim = from_bounds(lon_min, lat_min, lon_max, lat_max, largura, altura)
+# 2. Derive affine transformation matrix mapping pixel matrix to coordinates
+affine_transform = from_bounds(lon_min, lat_min, lon_max, lat_max, image_width_px, image_height_px)
 
-# 3. Write the GeoTIFF with geospatial metadata
-with rasterio.open(caminho, "w", driver="GTiff", crs=CRS.from_epsg(4326),
-                   transform=transform_afim, ...) as dst:
-    dst.write(array_imagem.transpose(2, 0, 1))
+# 3. Write GeoTIFF with coordinate reference system and LZW compression
+with rasterio.open(output_path, "w", driver="GTiff", crs=CRS.from_epsg(4326),
+                   transform=affine_transform, compress="lzw", ...) as dst:
+    dst.write(raster_array.transpose(2, 0, 1))
 ```
 
-Each library has a specific role:
-
-- **Pillow** (`PIL.Image`) decodes the binary bytes received from the server (which are compressed PNG format) and converts them into an in-memory RGB image.
-
-- **numpy** converts the Pillow image into a three-dimensional array of integers `(height × width × 3 channels)`. This numerical representation is what `rasterio` can write to disk.
-
-- **rasterio** is the standard library for geospatial raster data I/O in Python. It writes the array as a GeoTIFF with:
-  - **CRS** (Coordinate Reference System): `EPSG:4326`
-  - **Affine transform**: a matrix associating each pixel to an actual geographic position
-  - **LZW compression**: reduces file size without quality loss
-
-Because the PNG → GeoTIFF conversion is a **CPU-bound** operation (uses processor, does not wait for I/O), it is executed in a separate thread via `loop.run_in_executor(None, ...)` — preventing the asynchronous event loop from blocking while other images are being downloaded.
+Because raster encoding is CPU-bound, execution is delegated to worker threads via `loop.run_in_executor()`, preserving full responsiveness of the asynchronous network event loop.
 
 ---
 
-### Step 6 — Registering in the Manifest
+### Step 6 — Dataset Manifest Registration
 
-> **File:** `utils/manifesto.py` → `inicializar_manifesto` and `registrar_resultado` functions
-> **Library:** `csv` (Python standard library)
+> **Module:** `utils/manifest.py` → `initialize_manifest()` and `record_result()`  
+> **Dependency:** `csv` (Python Standard Library)
 
-After each pair of images is processed, the result is immediately recorded in the CSV manifest.
+Following each coordinate processing cycle, completion metadata is recorded immediately to disk within `artifacts/dataset_manifest.csv`.
 
 ```python
-registrar_resultado(
-    numero_amostra=1,
-    cod_imovel="ES-...",
-    x=..., y=...,
+record_result(
+    manifest_path=manifest_path,
+    sample_id=1,
+    property_id="ES-3200136-...",
+    x=317411.43,
+    y=7898046.95,
     bbox=(lon_min, lat_min, lon_max, lat_max),
-    status_satelite="ok",
-    status_uso_solo="ok",
+    satellite_status="ok",
+    land_cover_status="ok",
 )
 ```
 
-The manifest is a CSV file at `artifacts/dataset_manifesto.csv` containing one row per processed coordinate, with columns:
+#### Manifest Schema:
 
 | Column | Description |
 |---|---|
-| `numero_amostra` | Sequential number (1, 2, 3, ...) |
-| `cod_imovel` | Property code in CAR |
-| `x`, `y` | Original UTM coordinates |
-| `bbox_xmin/ymin/xmax/ymax` | Bounding box in decimal degrees |
-| `status_satelite` | `ok` or `erro` |
-| `status_uso_solo` | `ok` or `erro` |
-| `data_download` | ISO 8601 timestamp of the download moment |
-
-Python's standard **`csv`** library is used with `DictWriter`, which writes dictionaries directly as CSV rows — one at a time, in append mode (`"a"`). This ensures the manifest is updated in real-time: even if the pipeline is interrupted halfway, the processed samples remain recorded.
+| `sample_id` | Sequential sample integer index (1, 2, 3, ...) |
+| `property_id` | Rural property identifier code in the CAR registry |
+| `x`, `y` | Original planar centroid coordinates (EPSG:31984) |
+| `bbox_xmin`, `ymin`, `xmax`, `ymax` | Bounding box spatial extents in decimal degrees (EPSG:4326) |
+| `satellite_status` | Status flag (`ok`, `error`, or `skipped`) |
+| `land_cover_status` | Status flag (`ok`, `error`, or `skipped`) |
+| `download_timestamp` | ISO 8601 UTC/local timestamp of extraction completion |
 
 ---
 
-### Progress Bar
+## Real-Time Monitoring and Logging
 
-> **Library:** `tqdm`
-
-During processing, the terminal displays a real-time progress bar:
-
+### Terminal Progress Indicator
+`tqdm` outputs a real-time progress monitor:
 ```
-Baixando imagens:  42%|████████████          | 420/1000 [03:21<04:38,  2.09img/s]
+Downloading images:  42%|████████████          | 420/1000 [03:21<04:38,  2.09img/s]
 ```
 
-The **tqdm** library wraps the processing loop and automatically updates the bar for each completed image, displaying: percentage, count, elapsed time, estimated time, and speed (images/second).
-
----
-
-### Logging
-
-> **Library:** `logging` (Python standard library)
-
-Running parallel to the progress bar, all pipeline events are recorded with a timestamp in the `logs/execucao.log` file and displayed in the terminal:
-
+### Execution Log File
+Structured event logs are recorded to `logs/execution.log` and broadcast to stdout:
 ```
-2025-03-05 14:32:01 [INFO] Connecting to WMS service: https://...
-2025-03-05 14:32:03 [INFO] Layer validated: geonode:ijsn-ortofoto...
-2025-03-05 14:32:03 [INFO] CSV loaded: 3000 coordinates found
-2025-03-05 14:32:45 [INFO] [amostra_42] SATELITE OK
-2025-03-05 14:32:45 [WARNING] Timeout on attempt 1/3
-```
-
-Python's standard **`logging`** library uses two simultaneous `handlers`: a `FileHandler` (saves to the log file) and a `StreamHandler` (displays in the terminal). The `INFO` level records normal flow; errors and warnings appear in `WARNING` and `ERROR`.
-
----
-
-## Flow Diagram
-
-```
-coordenadas.csv
-      │
-      ▼
- [pandas] reads the CSV
-      │
-      ▼ for each coordinate (in parallel via asyncio.Semaphore)
-      │
-      ├──► [pyproj] converts UTM → lat/lon → calculates bbox
-      │
-      ├──► [aiohttp + asyncio] sends GetMap to GeoBases WMS
-      │         │                     │
-      │    SATELLITE              SEGMENTED
-      │    (in parallel via asyncio.gather)
-      │
-      ├──► [Pillow] decodes PNG → RGB image
-      ├──► [numpy] converts image → numerical array
-      ├──► [rasterio] writes georeferenced GeoTIFF
-      │
-      └──► [csv] registers result in manifest
-                    │
-                    ▼
-         [tqdm] updates progress bar
-         [logging] records events in log
+2026-10-03 19:25:01 [INFO] Connecting to WMS service: https://ide.geobases.es.gov.br/geoserver/ows
+2026-10-03 19:25:03 [INFO] Layer validated: geonode:ijsn-ortofotomosaico-es-kompsat-3-3a-2019-2020
+2026-10-03 19:25:03 [INFO] CSV loaded: 282 coordinate records found
+2026-10-03 19:25:10 [INFO] [sample_1] SATELLITE OK
+2026-10-03 19:25:10 [INFO] [sample_1] SEGMENTED OK
 ```
 
 ---
 
-## Input CSV Format
+## Architectural Flow Diagram
 
-Separator: **semicolon** (`;`)
+```
+sample_train_coordinates.csv
+       │
+       ▼
+ [pandas] Ingests and validates spatial records
+       │
+       ▼ Iterate across records (concurrency managed via asyncio.Semaphore)
+       │
+       ├──► [pyproj] Converts EPSG:31984 (UTM) → EPSG:4326 (BBox degrees)
+       │
+       ├──► [aiohttp + asyncio] Dispatches WMS GetMap queries
+       │         │                         │
+       │     SATELLITE                 SEGMENTED
+       │     (parallelized via asyncio.gather)
+       │
+       ├──► [Pillow] Decodes PNG payload to RGB
+       ├──► [numpy] Converts raster to multidimensional tensor
+       ├──► [rasterio] Writes georeferenced GeoTIFF with affine transform
+       │
+       └──► [csv] Records sample outcome to manifest
+                     │
+                     ▼
+          [tqdm] Updates terminal progress bar
+          [logging] Persists operational event logs
+```
 
-| Column | Type | Description |
+---
+
+## Input CSV Specification
+
+Delimiter: **semicolon** (`;`)
+
+| Column Name | Data Type | Description |
 |---|---|---|
-| `cod_imovel` | string | Property code in CAR |
-| `x` | float | X coordinate in meters (EPSG:31984 — UTM 24S) |
-| `y` | float | Y coordinate in meters (EPSG:31984) |
+| `property_id` *(or `cod_imovel`)* | string | Rural Environmental Registry (CAR) unique property code |
+| `x` | float | Centroid X coordinate in planar projection meters (EPSG:31984 — UTM Zone 24S) |
+| `y` | float | Centroid Y coordinate in planar projection meters (EPSG:31984) |

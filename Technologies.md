@@ -1,21 +1,22 @@
-# 📦 Technologies and Libraries
+# 📦 Technologies and Dependencies
 
-Reference of the libraries used in the IntegraCar pipeline, with a description of each one's role in the project.
+Comprehensive reference of the libraries and runtime dependencies employed within the IntegraCar pipeline, outlining their respective architectural roles and integration patterns.
 
 ---
 
 ## pandas
 
-**Minimum version:** `>= 2.2.3`
+**Minimum version:** `>= 2.2.3`  
 **Installation:** included in `requirements.txt`
 
-Library for analyzing and manipulating tabular data in Python. In the project, it is used exclusively to **read the input CSV** with the UTM coordinates of the rural properties.
+High-performance data manipulation and analysis library. Within this pipeline, it is utilized exclusively to parse and structure the input CSV file containing spatial coordinates of rural properties.
 
-- Reads the file with `pd.read_csv(file, sep=";")` and returns a `DataFrame`
-- Allows easily truncating to the first N rows (`--qtd`) with `.head(N)`
-- Iterates row by row with `.iterrows()` to feed the download pipeline
+- Reads tabular coordinates via `pd.read_csv(file, sep=";")` returning a structured `DataFrame`.
+- Dynamically resolves property identifier columns (`property_id` or `cod_imovel`).
+- Enables dataset slicing via `.head(N)` when executing bounded batches (`--limit`).
+- Iterates across coordinate records to populate asynchronous download tasks.
 
-**It is not used for image or geospatial processing** — only to load and prepare the input data.
+*Note: pandas is dedicated strictly to tabular parsing and metadata handling; it is not utilized for raster manipulation.*
 
 ---
 
@@ -23,29 +24,25 @@ Library for analyzing and manipulating tabular data in Python. In the project, i
 
 **Minimum version:** `>= 3.9.0`
 
-**Asynchronous** HTTP client for Python, based on `asyncio`. It is the library responsible for all network communication with the GeoBases WMS server.
+Asynchronous HTTP client framework built on top of `asyncio`. It serves as the networking backbone for all communication with the GeoBases OGC WMS endpoint.
 
-- Sends `GET` requests to the WMS endpoint with the `GetMap` parameters
-- Uses `TCPConnector` with a connection pool to reuse TCP sockets (keep-alive), reducing the connection cost for each image
-- Configures a timeout per request (`ClientTimeout`) to prevent the pipeline from getting stuck waiting for an unresponsive server
-- In case of failure (timeout or HTTP error), the pipeline retries up to 3 times with a pause between attempts
-
-Works in conjunction with `asyncio` to allow multiple downloads to occur simultaneously without blocking the process.
+- Issues non-blocking HTTP `GET` queries to the WMS endpoint with standard `GetMap` parameters.
+- Utilizes `TCPConnector` with persistent connection pools to maintain keep-alive TCP sockets, drastically reducing per-tile TLS/TCP handshake overhead.
+- Enforces strict query timeouts (`ClientTimeout`) to prevent worker starvation on unresponsive server states.
+- Implements resilient retry mechanics with configurable delays upon transient network anomalies or HTTP errors.
 
 ---
 
 ## asyncio
 
-**Origin:** Python standard library (does not require installation)
+**Source:** Python standard library (no external installation required)
 
-Python's asynchronous concurrency engine. It allows executing multiple I/O operations (like HTTP downloads) "concurrently" without using multiple threads or processes.
+Python asynchronous concurrency framework. It facilitates concurrent execution of high-volume I/O operations (such as spatial map downloads) within a single event loop thread.
 
-In the project:
-
-- **`asyncio.Semaphore`** — limits how many coordinates are processed at the same time (controlled by `--workers`). Prevents the pipeline from sending hundreds of simultaneous requests to the server.
-- **`asyncio.gather`** — triggers the download of the satellite and the segmented image for the same coordinate **in parallel**, waiting for both to finish before continuing.
-- **`asyncio.as_completed`** — processes the results as they are ready, without waiting for all of them to finish to display progress.
-- **`loop.run_in_executor`** — executes the PNG → GeoTIFF conversion (CPU-bound operation) in a separate thread, without blocking the event loop.
+- **`asyncio.Semaphore`**: Constrains concurrent network queries (`--workers`) to prevent denial-of-service throttling or saturation of upstream WMS infrastructure.
+- **`asyncio.gather`**: Dispatches simultaneous requests for both SATELLITE (orthophotomosaic) and SEGMENTED (land use/land cover) layers for a given coordinate pair.
+- **`asyncio.as_completed`**: Yields completed image pairs reactively, providing continuous pipeline throughput without blocking on trailing requests.
+- **`loop.run_in_executor`**: Offloads CPU-intensive operations (such as PNG decoding and GeoTIFF raster encoding) to background worker threads, preventing event-loop degradation.
 
 ---
 
@@ -53,13 +50,13 @@ In the project:
 
 **Minimum version:** `>= 0.29.3`
 
-Python library for consuming OGC geospatial services, including **WMS** (Web Map Service), **WFS**, and **WCS**. In the project, it is used only in the **initialization and validation phase**.
+Specialized client library for Open Geospatial Consortium (OGC) web service standards, including **WMS** (Web Map Service), **WFS**, and **WCS**.
 
-- Connects to the WMS server via `WebMapService(url, version="1.3.0")`
-- Automatically downloads the `GetCapabilities` — the catalog of available layers on the server
-- Allows verifying if the used layers (`camada_satelite`, `camada_uso_solo`) exist on the server, displaying a warning otherwise
+- Establishes communication with the WMS endpoint via `WebMapService(url, version="1.3.0")`.
+- Parses the remote `GetCapabilities` XML document to inspect the spatial layer catalog.
+- Validates the availability of configured typenames (`satellite_layer` and `land_cover_layer`) prior to initiating batch extraction.
 
-**It is not used for the downloads themselves.** The image downloads are done directly with `aiohttp` to allow asynchronous communication, which OWSLib does not support.
+*Note: OWSLib is deployed strictly for initial service validation; actual tile streaming is handled by `aiohttp` to leverage non-blocking asynchronous execution.*
 
 ---
 
@@ -67,21 +64,65 @@ Python library for consuming OGC geospatial services, including **WMS** (Web Map
 
 **Minimum version:** `>= 3.6.1`
 
-Cartographic and geodetic transformation library, based on the C library `PROJ`. It is used to **convert coordinates** between reference systems.
+Geodetic and cartographic projection transformation library, providing Python bindings to the `PROJ` system.
 
-In the project, it converts the CSV coordinates from **EPSG:31984** (UTM zone 24S, in meters) to **EPSG:4326** (latitude/longitude in decimal degrees), which is the system required by the WMS server.
-
-- Creates a `Transformer` with `from_crs("EPSG:31984", "EPSG:4326", always_xy=True)`
-- Applies the transformation to the four corners of the bounding box around each central point
-- The transformer is created only once and reused from cache for all coordinates
+- Converts planar coordinates from projected spatial reference systems (e.g., **EPSG:31984** — SIRGAS 2000 / UTM Zone 24S in meters) to geographic coordinate systems (**EPSG:4326** — WGS 84 in decimal degrees).
+- Computes geographic bounding box envelopes (`lon_min, lat_min, lon_max, lat_max`) derived from central coordinate points and metric buffer distances.
+- Optimizes computational overhead by instantiating thread-safe, cached `Transformer` instances.
 
 ---
 
-## Pillow
+## Pillow (PIL)
 
 **Minimum version:** `>= 11.1.0`
 
-Image processing library in Python. In the pipeline, it is used to **decode the PNG bytes** returned by the WMS server into an RGB image that can be numerically manipulated.
+Core imaging library for Python.
 
-```python
-imagem_pil = Image.open(io.BytesIO(conteudo_binario)).convert("RGB")
+- Ingests raw binary byte streams returned by WMS `GetMap` responses (`image/png`).
+- Decodes compressed PNG streams in memory (`Image.open(io.BytesIO(...)).convert("RGB")`) into uncompressed RGB pixel grids without intermediate disk writes.
+
+---
+
+## numpy
+
+**Minimum version:** `>= 2.2.3`
+
+Fundamental numerical computing package providing high-performance multidimensional array structures.
+
+- Transforms Pillow RGB image structures into three-dimensional NumPy numerical arrays with shape `(height, width, 3)`.
+- Reorders tensor dimensions via `.transpose(2, 0, 1)` into channel-first notation `(bands, height, width)` as required by raster geowriters.
+
+---
+
+## rasterio
+
+**Minimum version:** `>= 1.4.3`
+
+Industry-standard geospatial raster I/O package based on GDAL.
+
+- Encodes raw pixel matrices into georeferenced GeoTIFF (`GTiff`) files.
+- Computes affine transformation matrices mapping pixel space `(row, col)` to geographic coordinates `(lon, lat)` based on bounding box limits.
+- Applies standard Coordinate Reference System (CRS) definitions (such as `EPSG:4326`).
+- Embeds lossless LZW compression (`compress="lzw"`) to minimize storage footprint while retaining full radiometric fidelity.
+
+---
+
+## tqdm
+
+**Minimum version:** `>= 4.67.1`
+
+Progress bar utility for command-line interfaces.
+
+- Provides real-time visual progress monitoring across parallel asynchronous tasks.
+- Dynamically displays completion percentage, total processed samples, elapsed time, estimated time of arrival (ETA), and throughput rates (images per second).
+
+---
+
+## logging
+
+**Source:** Python standard library (no external installation required)
+
+Structured application logging system.
+
+- Employs dual output handlers: console streaming (`StreamHandler`) and persistent disk storage (`FileHandler` writing to `logs/execution.log`).
+- Logs timestamps, operational levels (`INFO`, `WARNING`, `ERROR`), and structured context messages for auditability and diagnostic tracking.
