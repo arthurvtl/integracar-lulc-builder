@@ -1,0 +1,13 @@
+venv/
+output/
+saida/
+logs/
+artifacts/
+arthur/
+__pycache__/
+*.pyc
+.env
+temp_shp_2012/
+*.zip
+data_segments/
+dataset_10k_all.txt
